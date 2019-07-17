@@ -1,0 +1,19 @@
+{
+	"name": "@karimsa/superq",
+	"version": "0.0.0",
+	"main": "module.dist.js",
+	"scripts": {
+		"watch": "nodemon -w src -x npm run build",
+		"build": "wiz build src/worker.js && wiz build src/module.js"
+	},
+	"devDependencies": {
+		"@karimsa/wiz": "^0.1.3",
+		"nodemon": "^1.19.1"
+	},
+	"dependencies": {
+		"debug": "^4.1.1",
+		"ioredis": "^4.11.2",
+		"pretty-time": "git+https://github.com/karimsa/pretty-time.git",
+		"rsxjs": "^0.5.6"
+	}
+}
