@@ -37,6 +37,16 @@ function createRedisHash(options) {
 	return `redis://_:${password}@${host}:${port}/${db}`
 }
 
+function createExecutionID(job, data) {
+	if (typeof job === 'object' && Reflect.has(job, 'getExecutionID')) {
+		return job.getExecutionID(data)
+	}
+
+	// TODO: should use stable stringify, since this can yield
+	// different hashes for the same data object
+	return Buffer.from(JSON.stringify(data), 'utf8').toString('base64')
+}
+
 export const kQueue = Symbol('queue')
 
 export class Queue {
@@ -148,9 +158,13 @@ export class Queue {
 				? job.getAttempts(data)
 				: this.defaultRetryAttempts
 
+		if (Reflect.has(options, 'delay') && Reflect.has(options, 'dependencies')) {
+			throw new Error(`Jobs cannot be both delayed and have dependencies`)
+		}
+
 		// if job is delayed, enqueue it for later
 		if (options.delay !== undefined) {
-			const execID = job.getExecutionID(data)
+			const execID = createExecutionID(job, data)
 
 			await this.redis.zadd(
 				this.delayedQueueName,
@@ -167,7 +181,7 @@ export class Queue {
 			return { name, jobID: execID }
 		} else if (options.dependencies && options.dependencies.length > 0) {
 			// setup dependencies, if the job has any
-			const execID = job.getExecutionID(data)
+			const execID = createExecutionID(job, data)
 
 			await this.setupJobDependencies({
 				name,
