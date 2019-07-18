@@ -6,12 +6,14 @@
 import createDebug from 'debug'
 import Redis from 'ioredis'
 import * as prettyTime from 'pretty-time'
+import { WaitGroup } from 'rsxjs'
 
 import { logger } from './logger'
 import { createJobProxy } from './runtime'
-import { WaitGroup } from 'rsxjs';
+import { kRedisClient, kTimers } from './symbols'
 
-const debug = createDebug('hirefast:queue')
+const debug = createDebug('superq')
+const isTestEnv = process.env.NODE_ENV === 'test'
 
 /**
  * JobPriority represents the possible values for the priority of a single
@@ -24,9 +26,12 @@ export const JobPriority = {
 	Critical: 'critical',
 }
 
-async function markJobAsDone({ name, jobID }) {
-	console.warn('markJobAsDone => %O', { name, jobID })
-}
+const priorityList = [
+	JobPriority.Critical,
+	JobPriority.High,
+	JobPriority.Normal,
+	JobPriority.Low,
+]
 
 function createRedisHash(options) {
 	const host = options && options.host ? options.host : 'localhost'
@@ -47,7 +52,13 @@ function createExecutionID(job, data) {
 	return Buffer.from(JSON.stringify(data), 'utf8').toString('base64')
 }
 
-export const kQueue = Symbol('queue')
+/**
+ * Sets up the dependencies for a given job.
+ */
+const dependenciesKey = ({ name, jobID }) => `dependencies(${name}:${jobID})`
+const reverseDependenciesKey = ({ name, jobID }) =>
+	`reverseDependencies(${name}:${jobID})`
+const jobDataKey = ({ name, jobID }) => `jobData(${name}:${jobID})`
 
 export class Queue {
 	constructor({
@@ -79,12 +90,6 @@ export class Queue {
 		redis,
 
 		/**
-		 * (Optional) Amount of time to wait in milliseconds before
-		 * retrying a failed job.
-		 */
-		retryTimeout = 10000,
-
-		/**
 		 * (Optional) The default priority of an enqueued job.
 		 * This priority can be overriden by the job implementation.
 		 */
@@ -107,21 +112,28 @@ export class Queue {
 		 * job parameters from a string into an object.
 		 */
 		deserialize = JSON.parse,
+
+		// Dependency injection for tests
+		[kRedisClient]: testRedisClient,
+		[kTimers]: timers,
 	} = {}) {
 		this.keyPrefix = keyPrefix
 		this.queueName = this.getKey(name)
 		this.delayedQueueName = this.getKey(`delayed:${name}`)
-		this.redis = new Redis(redis)
+		if (
+			!(this.redis = (isTestEnv ? testRedisClient : null) || new Redis(redis))
+		) {
+			throw new Error(`Redis client is required to create a queue instance`)
+		}
 		this.redisConnectionHash = createRedisHash(redis)
 		this.consumerGroup = consumerGroup
 		this.jobs = new Map(Object.entries(jobs))
-		this.jobs.set('markJobAsDone', markJobAsDone)
+		this.timers = isTestEnv ? timers : global
 		this.serializeData = serialize
 		this.deserializeData = deserialize
-		this.retryTimeout = retryTimeout
 		this.defaultPriority = defaultPriority
 		this.defaultRetryAttempts = defaultRetryAttempts
-		this.xstreams = Object.values(JobPriority).map(priority => {
+		this.xstreams = priorityList.map(priority => {
 			return this.getQueueName(priority)
 		})
 	}
@@ -139,7 +151,8 @@ export class Queue {
 	 */
 	async Enqueue(name, data, options = {}) {
 		// grab the job implementation
-		const job = this.jobs.get(name)
+		const job =
+			name === 'markJobAsDone' ? this.markJobAsDone : this.jobs.get(name)
 		if (!job) {
 			throw new Error(
 				`There exists no registered job in this queue with the name: '${name}'`,
@@ -168,7 +181,7 @@ export class Queue {
 
 			await this.redis.zadd(
 				this.delayedQueueName,
-				String(Date.now() + options.delay),
+				String(this.timers.Date.now() + options.delay),
 				this.serializeData({
 					name,
 					data,
@@ -272,11 +285,83 @@ export class Queue {
 		}
 	}
 
+	async setupJobDependencies({ name, data, execID, dependencies }) {
+		const wg = new WaitGroup()
+
+		// Push data onto redis
+		wg.add(
+			this.redis.set(
+				jobDataKey({ name, jobID: execID }),
+				this.serializeData(data),
+			),
+		)
+
+		// Create a record of dependencies for this job
+		wg.add(
+			this.redis.sadd(
+				dependenciesKey({ name, jobID: execID }),
+				...dependencies.map(d => `${d.name}:${d.jobID}`),
+			),
+		)
+
+		// Append to existing reverse records of jobs
+		for (const dep of dependencies) {
+			wg.add(this.redis.sadd(reverseDependenciesKey(dep), `${name}:${execID}`))
+		}
+
+		// Wait for all redis commands to resolve
+		await wg.wait()
+	}
+
+	async markJobAsDone({ name, jobID }) {
+		const wg = new WaitGroup()
+
+		for (const dependent of await this.redis.smembers(
+			reverseDependenciesKey({ name, jobID }),
+		)) {
+			const [depName, depID] = dependent.split(':')
+
+			wg.add(
+				this.redis
+					.multi()
+					.srem(
+						dependenciesKey({ name: depName, jobID: depID }),
+						`${name}:${jobID}`,
+					)
+					.scard(dependenciesKey({ name: depName, jobID: depID }))
+					.exec()
+					.then(async res => {
+						const card = res[1][1]
+
+						debug(`Reached cardinality of %O for ${depName}:${depID}`, res)
+
+						if (card === 0) {
+							if (!this.jobs.has(depName)) {
+								throw new Error(`Could not find dependent job: ${depName}`)
+							}
+
+							const data = this.deserializeData(
+								(await this.redis.get(
+									jobDataKey({ name: depName, jobID: depID }),
+								)) || '',
+							)
+							return this.Enqueue(depName, data)
+						}
+					}),
+			)
+		}
+
+		await wg.wait()
+	}
+
 	async executeJobEntry(entry) {
 		debug(`Job ${entry.name}:${entry.ID} read off ${entry.queueName}`)
 
 		// grab the job implementation
-		const job = this.jobs.get(entry.name)
+		const job =
+			entry.name === 'markJobAsDone'
+				? this.markJobAsDone.bind(this, entry.data)
+				: this.jobs.get(entry.name)
 		if (!job) {
 			throw new Error(
 				`Job ${entry.ID} referenced a non-existent job: ${entry.name}`,
@@ -333,6 +418,19 @@ export class Queue {
 		return entry.name
 	}
 
+	async shiftDelayedJobs() {
+		for (const jobStr of await this.redis.zrangebyscore(
+			this.delayedQueueName,
+			0,
+			this.timers.Date.now(),
+		)) {
+			const job = this.deserializeData(jobStr)
+			debug(`Moving ${job.name} from delayed queue into priority queue`)
+			await this.addJobToQueue(job)
+			await this.redis.zrem(this.delayedQueueName, jobStr)
+		}
+	}
+
 	async initQueue() {
 		const wg = new WaitGroup()
 
@@ -344,7 +442,7 @@ export class Queue {
 					this.consumerGroup,
 					'0',
 					'mkstream',
-				)
+				),
 			)
 		}
 

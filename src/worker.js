@@ -7,16 +7,25 @@ import createDebug from 'debug'
 import { WaitGroup } from 'rsxjs'
 import { v4 as uuid } from 'uuid'
 
-import { Queue, kQueue } from './queue'
+import { Queue } from './queue'
 import { logger } from './logger'
+import { kQueue, kTimers, kWorker } from './symbols'
 
-const debug = createDebug('hirefast:queue')
+const debug = createDebug('superq')
 const isTestEnv = process.env.NODE_ENV === 'test'
 
 export class Worker {
 	constructor({
 		consumerID,
 		queues,
+
+		[kTimers]: timers = global,
+
+		/**
+		 * (Optional) Amount of time to wait in milliseconds before
+		 * retrying a failed job.
+		 */
+		retryTimeout = 10000,
 
 		/**
 		 * (Optional) Amount of time to wait in milliseconds before
@@ -32,7 +41,9 @@ export class Worker {
 		this.delayedQueueNames = []
 		this.xreadStreams = []
 		this.consumerID = consumerID || uuid()
+		this.retryTimeout = retryTimeout
 		this.readTimeout = readTimeout
+		this.timers = isTestEnv ? timers : global
 
 		if (!Array.isArray(queues)) {
 			throw new Error(`Queues must be an array of queue objects`)
@@ -50,9 +61,13 @@ export class Worker {
 				this.redis = queueHandle.redis
 				this.consumerGroup = queueHandle.consumerGroup
 			} else if (redisConnectionHash !== queueHandle.redisConnectionHash) {
-				throw new Error(`All queues in the worker should be connected to the same redis db`)
+				throw new Error(
+					`All queues in the worker should be connected to the same redis db`,
+				)
 			} else if (this.consumerGroup !== queueHandle.consumerGroup) {
-				throw new Error(`All queues in the worker should be part of the same consumer group`)
+				throw new Error(
+					`All queues in the worker should be part of the same consumer group`,
+				)
 			}
 
 			for (const xstream of queueHandle.xstreams) {
@@ -156,6 +171,7 @@ export class Worker {
 						maxAttempts: jobData.maxAttempts,
 						name: jobData.name,
 						queueName,
+						queue: this.queuesByName.get(queueName),
 					})
 				} else {
 					if (isTestEnv) {
@@ -174,24 +190,9 @@ export class Worker {
 
 	async shiftDelayedJobs() {
 		const wg = new WaitGroup()
-
-		for (const delayedQueueName of this.delayedQueueNames) {
-			wg.add(
-				(async () => {
-					for (const jobStr of await this.redis.zrangebyscore(
-						delayedQueueName,
-						0,
-						Date.now(),
-					)) {
-						const job = this.deserializeData(jobStr)
-						debug(`Moving ${job.name} from delayed queue into priority queue`)
-						await this.addJobToQueue(job)
-						await this.redis.zrem(this.delayedQueueName, jobStr)
-					}
-				})()
-			)
+		for (const queue of this.queuesByName.values()) {
+			wg.add(queue.shiftDelayedJobs())
 		}
-
 		await wg.wait()
 	}
 
@@ -269,11 +270,26 @@ export class Worker {
 			debug(`Read nothing from any job stream`)
 			return []
 		}
-		
+
 		const goals = []
 		for (const entry of entries) {
 			goals.push(entry.queue.executeJobEntry(entry))
 		}
 		return Promise.all(goals)
+	}
+}
+
+export class WorkerHandle {
+	constructor(options) {
+		this[kWorker] = new Worker(options)
+	}
+
+	start() {
+		this.runner = this[kWorker].process()
+	}
+
+	async stop() {
+		await this[kWorker].shutdown()
+		return this.runner
 	}
 }

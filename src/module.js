@@ -4,3 +4,4 @@
  */
 
 export { createQueue } from './queue'
+export { WorkerHandle as Worker } from './worker'

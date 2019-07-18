@@ -3,7 +3,7 @@
  * @copyright Karim Alibhai. All rights reserved.
  */
 
-import { kQueue } from './queue'
+import { kQueue } from './symbols'
 
 export function createJobProxy(queue) {
 	const jobs = {
