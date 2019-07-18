@@ -26,10 +26,12 @@ export async function initTestQueue({ name = 'test-queue', jobs }) {
 	const redis = new Redis({ db: redisDB })
 	await redis.flushdb()
 
-	const jobMocks = jobs.reduce((mocks, job) => {
-		mocks[job] = jest.fn()
-		return mocks
-	}, {})
+	const jobMocks = Array.isArray(jobs)
+		? jobs.reduce((mocks, job) => {
+				mocks[job] = jest.fn()
+				return mocks
+		  }, {})
+		: jobs
 	const clock = lolex.createClock()
 	const queue = await createQueue({
 		name,
