@@ -372,7 +372,15 @@ export class Queue {
 		let jobErr
 		const jobTimer = prettyTime.start()
 		try {
-			await job(entry.data)
+			if (typeof job === 'object') {
+				if (!Reflect.has(job, 'run')) {
+					throw new Error(`Job ${entry.name} is an object but does not have a run method`)
+				}
+
+				await job.run(entry.data)
+			} else {
+				await job(entry.data)
+			}
 		} catch (err) {
 			jobErr = err
 		}
