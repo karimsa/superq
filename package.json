@@ -15,7 +15,8 @@
 	"dependencies": {
 		"debug": "^4.1.1",
 		"ioredis": "^4.11.2",
-		"pretty-time": "git+https://github.com/karimsa/pretty-time.git",
+		"microtime": "^3.0.0",
+		"ms": "^2.1.2",
 		"rsxjs": "^0.5.6"
 	}
 }

@@ -5,8 +5,10 @@
 
 import createDebug from 'debug'
 import Redis from 'ioredis'
-import * as prettyTime from 'pretty-time'
 import { WaitGroup } from 'rsxjs'
+import { EventEmitter } from 'events'
+import { now as microtime } from 'microtime'
+import ms from 'ms'
 
 import { logger } from './logger'
 import { createJobProxy } from './runtime'
@@ -60,7 +62,7 @@ const reverseDependenciesKey = ({ name, jobID }) =>
 	`reverseDependencies(${name}:${jobID})`
 const jobDataKey = ({ name, jobID }) => `jobData(${name}:${jobID})`
 
-export class Queue {
+export class Queue extends EventEmitter {
 	constructor({
 		/**
 		 * (Required) Name to give to the queue.
@@ -79,7 +81,7 @@ export class Queue {
 		consumerGroup = 'hirefast-workers',
 
 		/**
-		 * (Optional) Jobs object containing jobs that should be registered
+		 * (Required) Jobs object containing jobs that should be registered
 		 * to this queue.
 		 */
 		jobs,
@@ -117,8 +119,9 @@ export class Queue {
 		[kRedisClient]: testRedisClient,
 		[kTimers]: timers,
 	} = {}) {
+		super()
 		this.keyPrefix = keyPrefix
-		this.queueName = this.getKey(name)
+		this.queueName = name
 		this.delayedQueueName = this.getKey(`delayed:${name}`)
 		if (
 			!(this.redis = (isTestEnv ? testRedisClient : null) || new Redis(redis))
@@ -127,8 +130,11 @@ export class Queue {
 		}
 		this.redisConnectionHash = createRedisHash(redis)
 		this.consumerGroup = consumerGroup
+		if (typeof jobs !== 'object' || jobs === null) {
+			throw new Error(`Jobs object is required when creating a queue instance`)
+		}
 		this.jobs = new Map(Object.entries(jobs))
-		this.timers = isTestEnv ? timers : global
+		this.timers = (isTestEnv ? timers : null) || global
 		this.serializeData = serialize
 		this.deserializeData = deserialize
 		this.defaultPriority = defaultPriority
@@ -217,7 +223,7 @@ export class Queue {
 	}
 
 	getQueueName(priority) {
-		return this.getKey(`queue(${priority})`)
+		return this.getKey(`${this.queueName}:${priority}`)
 	}
 
 	/**
@@ -370,7 +376,7 @@ export class Queue {
 
 		// execute the job
 		let jobErr
-		const jobTimer = prettyTime.start()
+		const timeOfJobStart = microtime()
 		try {
 			if (typeof job === 'object') {
 				if (!Reflect.has(job, 'run')) {
@@ -387,12 +393,22 @@ export class Queue {
 
 		// mark end of the job by grabbing the time & incrementing the
 		// attempts
-		const duration = jobTimer.end()
+		const duration = microtime() - timeOfJobStart
 		++entry.attempted
 
 		if (jobErr) {
+			this.emit('jobError', {
+				queue: this.queueName,
+				name: entry.name,
+				data: entry.data,
+				jobID: entry.ID,
+				duration,
+				attempt: entry.attempted,
+				error: jobErr,
+			})
+
 			logger.error(
-				`Job ${entry.name}:${entry.ID} failed after ${duration}`,
+				`Job ${entry.name}:${entry.ID} failed after ${ms(duration / 1e3)}`,
 				jobErr,
 			)
 
@@ -405,25 +421,29 @@ export class Queue {
 
 				await this.ackJob(entry)
 			}
-
-			throw jobErr
-		}
-
-		debug(`Job ${entry.name}:${entry.ID} finished after ${duration}`)
-
-		// Queue up a signal to resolve dependencies - for all jobs
-		// except the `markJobAsDone` job
-		if (entry.name !== 'markJobAsDone') {
-			await this.Enqueue('markJobAsDone', {
+		} else {
+			this.emit('jobEnd', {
+				queue: this.queueName,
 				name: entry.name,
+				data: entry.data,
 				jobID: entry.ID,
+				duration,
+				attempt: entry.attempted,
 			})
+			debug(`Job ${entry.name}:${entry.ID} finished after ${ms(duration / 1e3)}`)
+
+			// Queue up a signal to resolve dependencies - for all jobs
+			// except the `markJobAsDone` job
+			if (entry.name !== 'markJobAsDone') {
+				await this.Enqueue('markJobAsDone', {
+					name: entry.name,
+					jobID: entry.ID,
+				})
+			}
+
+			// If we have completed successfully, clear the job out instead of acknowledging it
+			await this.ackJob(entry)
 		}
-
-		// If we have completed successfully, clear the job out instead of acknowledging it
-		await this.ackJob(entry)
-
-		return entry.name
 	}
 
 	async shiftDelayedJobs() {

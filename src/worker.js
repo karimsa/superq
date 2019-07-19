@@ -18,15 +18,13 @@ export class Worker {
 	constructor({
 		consumerID,
 		queues,
-
-		[kTimers]: timers = global,
-
+		
 		/**
 		 * (Optional) Amount of time to wait in milliseconds before
 		 * retrying a failed job.
 		 */
 		retryTimeout = 10000,
-
+		
 		/**
 		 * (Optional) Amount of time to wait in milliseconds before
 		 * assuming there are no jobs available in the queue. This will
@@ -34,8 +32,11 @@ export class Worker {
 		 * a SIGINT.
 		 */
 		readTimeout = 5000,
+
+		// Dependency injection for tests
+		[kTimers]: timers = global,
 	} = {}) {
-		this.queues = queues
+		this.queues = new Set()
 		this.queuesByName = new Map()
 		this.queueNames = []
 		this.delayedQueueNames = []
@@ -75,6 +76,7 @@ export class Worker {
 				this.queuesByName.set(xstream, queueHandle)
 			}
 
+			this.queues.add(queueHandle)
 			this.queueNames.push(queueHandle.queueName)
 			this.delayedQueueNames.push(queueHandle.delayedQueueName)
 		}
@@ -282,11 +284,33 @@ export class Worker {
 		}
 		return Promise.all(goals)
 	}
+
+	on(event, handler) {
+		for (const queue of this.queues) {
+			queue.on(event, handler)
+		}
+	}
+
+	off(event, handler) {
+		for (const queue of this.queues) {
+			queue.off(event, handler)
+		}
+	}
 }
 
 export class WorkerHandle {
 	constructor(options) {
 		this[kWorker] = new Worker(options)
+	}
+
+	on(event, handler) {
+		this[kWorker].on(event, handler)
+		return this
+	}
+
+	off(event, handler) {
+		this[kWorker].off(event, handler)
+		return this
 	}
 
 	start() {
