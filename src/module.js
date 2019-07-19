@@ -3,5 +3,5 @@
  * @copyright Karim Alibhai. All rights reserved.
  */
 
-export { createQueue } from './queue'
+export { createQueue, JobPriority } from './queue'
 export { WorkerHandle as Worker } from './worker'
