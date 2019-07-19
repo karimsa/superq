@@ -273,7 +273,12 @@ export class Worker {
 
 		const goals = []
 		for (const entry of entries) {
-			goals.push(entry.queue.executeJobEntry(entry))
+			goals.push(
+				entry.queue.executeJobEntry(entry)
+					.catch(() => {
+						// TODO: Log error for monitoring
+					})
+			)
 		}
 		return Promise.all(goals)
 	}
