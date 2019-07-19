@@ -21,10 +21,7 @@ test('should emit valid events on both queue and worker objects', async () => {
 	})
 
 	const worker = new Worker({
-		queues: [
-			queueOne,
-			queueTwo,
-		],
+		queues: [queueOne, queueTwo],
 	})
 
 	await queueOne.one.Enqueue({})

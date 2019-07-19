@@ -6,24 +6,24 @@
 import { initTestQueue } from './helpers'
 
 test('should not allow a delayed job to have dependencies', async () => {
-	const {
-		queue,
-	} = await initTestQueue({
+	const { queue } = await initTestQueue({
 		jobs: ['hello'],
 	})
 
-	await expect(queue.hello.Enqueue({}, {
-		delay: 1000,
-		dependencies: [null],
-	})).rejects.toThrow('cannot be both')
+	await expect(
+		queue.hello.Enqueue(
+			{},
+			{
+				delay: 1000,
+				dependencies: [null],
+			},
+		),
+	).rejects.toThrow('cannot be both')
 })
 
 test('should allow multiple dependencies', async () => {
 	const executions = []
-	const {
-		worker,
-		queue,
-	} = await initTestQueue({
+	const { worker, queue } = await initTestQueue({
 		jobs: {
 			parent: () => {
 				executions.push('parent')
@@ -65,10 +65,7 @@ test('should allow multiple dependencies', async () => {
 
 test('should respect job dependencies when executing jobs', async () => {
 	const executions = []
-	const {
-		worker,
-		queue,
-	} = await initTestQueue({
+	const { worker, queue } = await initTestQueue({
 		jobs: {
 			parent: () => {
 				executions.push('parent')

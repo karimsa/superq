@@ -3,10 +3,11 @@
  * @copyright Karim Alibhai. All rights reserved.
  */
 
+import { EventEmitter } from 'events'
+
 import createDebug from 'debug'
 import Redis from 'ioredis'
 import { WaitGroup } from 'rsxjs'
-import { EventEmitter } from 'events'
 import { now as microtime } from 'microtime'
 import ms from 'ms'
 
@@ -380,7 +381,9 @@ export class Queue extends EventEmitter {
 		try {
 			if (typeof job === 'object') {
 				if (!Reflect.has(job, 'run')) {
-					throw new Error(`Job ${entry.name} is an object but does not have a run method`)
+					throw new Error(
+						`Job ${entry.name} is an object but does not have a run method`,
+					)
 				}
 
 				await job.run(entry.data)
@@ -430,7 +433,9 @@ export class Queue extends EventEmitter {
 				duration,
 				attempt: entry.attempted,
 			})
-			debug(`Job ${entry.name}:${entry.ID} finished after ${ms(duration / 1e3)}`)
+			debug(
+				`Job ${entry.name}:${entry.ID} finished after ${ms(duration / 1e3)}`,
+			)
 
 			// Queue up a signal to resolve dependencies - for all jobs
 			// except the `markJobAsDone` job

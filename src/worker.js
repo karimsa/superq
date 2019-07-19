@@ -18,13 +18,13 @@ export class Worker {
 	constructor({
 		consumerID,
 		queues,
-		
+
 		/**
 		 * (Optional) Amount of time to wait in milliseconds before
 		 * retrying a failed job.
 		 */
 		retryTimeout = 10000,
-		
+
 		/**
 		 * (Optional) Amount of time to wait in milliseconds before
 		 * assuming there are no jobs available in the queue. This will
@@ -45,6 +45,7 @@ export class Worker {
 		this.retryTimeout = retryTimeout
 		this.readTimeout = readTimeout
 		this.timers = isTestEnv ? timers : global
+		this.shouldRun = false
 
 		if (!Array.isArray(queues)) {
 			throw new Error(`Queues must be an array of queue objects`)
@@ -276,13 +277,23 @@ export class Worker {
 		const goals = []
 		for (const entry of entries) {
 			goals.push(
-				entry.queue.executeJobEntry(entry)
-					.catch(() => {
-						// TODO: Log error for monitoring
-					})
+				entry.queue.executeJobEntry(entry).catch(() => {
+					// TODO: Log error for monitoring
+				}),
 			)
 		}
 		return Promise.all(goals)
+	}
+
+	async process() {
+		this.shouldRun = true
+		while (this.shouldRun) {
+			await this.tick()
+		}
+	}
+
+	async shutdown() {
+		this.shouldRun = false
 	}
 
 	on(event, handler) {

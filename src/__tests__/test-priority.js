@@ -8,10 +8,7 @@ import { initTestQueue } from './helpers'
 
 test('should prioritize job executions regardless of enqueue order', async () => {
 	const executions = []
-	const {
-		queue,
-		worker,
-	} = await initTestQueue({
+	const { queue, worker } = await initTestQueue({
 		jobs: {
 			low: {
 				getPriority: () => JobPriority.Low,
@@ -34,9 +31,5 @@ test('should prioritize job executions regardless of enqueue order', async () =>
 	}
 
 	// verify order
-	expect(executions).toEqual([
-		'high',
-		'normal',
-		'low',
-	])
+	expect(executions).toEqual(['high', 'normal', 'low'])
 })
