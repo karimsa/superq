@@ -8,6 +8,7 @@ jobs:
       - checkout
       - run: npm ci
       - run: npm run build
+      - run: npm test
       - run:
           name: Publishing
           command: |

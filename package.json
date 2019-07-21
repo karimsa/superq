@@ -4,6 +4,7 @@
 	"main": "module.dist.js",
 	"scripts": {
 		"watch": "nodemon -w src -x npm run build",
+		"test": "wiz test",
 		"build": "wiz build src/worker.js && wiz build src/module.js"
 	},
 	"devDependencies": {
