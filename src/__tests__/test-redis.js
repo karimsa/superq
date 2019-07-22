@@ -30,9 +30,6 @@ describe('Redis', () => {
 				.get('one')
 				.get('two')
 				.exec(),
-		).toEqual([
-			[null, 'apple'],
-			[null, 'bat'],
-		])
+		).toEqual([[null, 'apple'], [null, 'bat']])
 	})
 })
