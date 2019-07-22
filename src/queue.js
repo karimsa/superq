@@ -6,11 +6,11 @@
 import { EventEmitter } from 'events'
 
 import createDebug from 'debug'
-import Redis from 'ioredis'
 import { WaitGroup } from 'rsxjs'
 import { now as microtime } from 'microtime'
 import ms from 'ms'
 
+import { createRedis } from './redis'
 import { logger } from './logger'
 import { createJobProxy } from './runtime'
 import { kRedisClient, kTimers } from './symbols'
@@ -125,7 +125,8 @@ export class Queue extends EventEmitter {
 		this.queueName = name
 		this.delayedQueueName = this.getKey(`delayed:${name}`)
 		if (
-			!(this.redis = (isTestEnv ? testRedisClient : null) || new Redis(redis))
+			!(this.createRedisPromise =
+				(isTestEnv ? testRedisClient : null) || createRedis(redis))
 		) {
 			throw new Error(`Redis client is required to create a queue instance`)
 		}
@@ -339,8 +340,11 @@ export class Queue extends EventEmitter {
 					.exec()
 					.then(async res => {
 						const card = res[1][1]
-
-						debug(`Reached cardinality of %O for ${depName}:${depID}`, res)
+						debug(
+							`Reached cardinality of %O for ${depName}:${depID} (reply => %O)`,
+							card,
+							res,
+						)
 
 						if (card === 0) {
 							if (!this.jobs.has(depName)) {
@@ -465,6 +469,8 @@ export class Queue extends EventEmitter {
 	}
 
 	async initQueue() {
+		this.redis = await this.createRedisPromise
+
 		const wg = new WaitGroup()
 
 		for (const stream of this.xstreams) {
