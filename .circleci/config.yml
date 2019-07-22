@@ -8,6 +8,9 @@ jobs:
       - checkout
       - run: npm ci
       - run: npm run build
+      - run:
+          name: Start redis server
+          command: ./src/__tests__/redis-server --appendonly no --daemonize yes
       - run: npm test
       - run:
           name: Publishing
