@@ -3,6 +3,8 @@
  * @copyright Karim Alibhai. All rights reserved.
  */
 
+import { performance } from 'perf_hooks'
+
 import createDebug from 'debug'
 import { WaitGroup } from 'rsxjs'
 import { v4 as uuid } from 'uuid'
@@ -268,9 +270,12 @@ export class Worker {
 	}
 
 	async tick() {
+		performance.mark('startWorkerTick')
 		const entries = await this.popJob(1)
 		if (entries.length === 0) {
 			debug(`Read nothing from any job stream`)
+			performance.mark('stopWorkerTick')
+			performance.measure('worker tick', 'startWorkerTick', 'stopWorkerTick')
 			return []
 		}
 
@@ -282,7 +287,10 @@ export class Worker {
 				}),
 			)
 		}
-		return Promise.all(goals)
+		await Promise.all(goals)
+
+		performance.mark('stopWorkerTick')
+		performance.measure('worker tick', 'startWorkerTick', 'stopWorkerTick')
 	}
 
 	async process() {
