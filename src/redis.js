@@ -98,6 +98,7 @@ export async function createRedis({
 	})
 
 	const sock = net.createConnection(port, host)
+	sock.unref()
 	sock.on('data', chunk => {
 		parser.execute(chunk)
 	})
