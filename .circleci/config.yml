@@ -10,7 +10,7 @@ jobs:
       - run: npm run build
       - run:
           name: Start redis server
-          command: ./src/__tests__/redis-server --appendonly no --daemonize yes
+          command: ./src/__tests__/redis-server --appendonly no --daemonize yes && sleep 1
       - run: npm test
       - run:
           name: Publishing
