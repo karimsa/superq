@@ -2,6 +2,9 @@
 	"name": "@karimsa/superq",
 	"version": "0.0.0",
 	"main": "module.dist.js",
+	"publishConfig": {
+		"access": "public"
+	},
 	"scripts": {
 		"watch": "nodemon -w src -x npm run build",
 		"test": "wiz test -- --runInBand --forceExit --detectOpenHandles",
