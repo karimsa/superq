@@ -6,7 +6,6 @@
 import { performance } from 'perf_hooks'
 
 import createDebug from 'debug'
-import { WaitGroup } from 'rsxjs'
 import { v4 as uuid } from 'uuid'
 
 import { Queue } from './queue'
@@ -194,11 +193,11 @@ export class Worker {
 	}
 
 	async shiftDelayedJobs() {
-		const wg = new WaitGroup()
+		const goals = []
 		for (const queue of this.queuesByName.values()) {
-			wg.add(queue.shiftDelayedJobs())
+			goals.push(queue.shiftDelayedJobs())
 		}
-		await wg.wait()
+		await Promise.all(goals)
 	}
 
 	/**

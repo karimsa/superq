@@ -8,6 +8,7 @@ import { kQueue } from './symbols'
 export function createJobProxy(queue) {
 	const jobs = {
 		[kQueue]: queue,
+		destroy: () => queue.destroy(),
 	}
 
 	for (const [name, fn] of queue.jobs.entries()) {

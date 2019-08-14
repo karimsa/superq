@@ -6,7 +6,6 @@
 import { EventEmitter } from 'events'
 
 import createDebug from 'debug'
-import { WaitGroup } from 'rsxjs'
 import { now as microtime } from 'microtime'
 import ms from 'ms'
 
@@ -117,19 +116,13 @@ export class Queue extends EventEmitter {
 		deserialize = JSON.parse,
 
 		// Dependency injection for tests
-		[kRedisClient]: testRedisClient,
 		[kTimers]: timers,
 	} = {}) {
 		super()
 		this.keyPrefix = keyPrefix
 		this.queueName = name
 		this.delayedQueueName = this.getKey(`delayed:${name}`)
-		if (
-			!(this.createRedisPromise =
-				(isTestEnv ? testRedisClient : null) || createRedis(redis))
-		) {
-			throw new Error(`Redis client is required to create a queue instance`)
-		}
+		this.redis = null
 		this.redisConnectionHash = createRedisHash(redis)
 		this.consumerGroup = consumerGroup
 		if (typeof jobs !== 'object' || jobs === null) {
@@ -233,13 +226,14 @@ export class Queue extends EventEmitter {
 	 */
 	async addJobToQueue(job, options) {
 		// add the job into the queue
+		const serializedData = this.serializeData(job.data)
 		const jobID = await this.redis.xadd(
 			this.getQueueName(job.priority),
 			'*',
 			'name',
 			job.name,
 			'data',
-			this.serializeData(job.data),
+			serializedData,
 			'maxAttempts',
 			String(job.maxAttempts),
 		)
@@ -294,10 +288,10 @@ export class Queue extends EventEmitter {
 	}
 
 	async setupJobDependencies({ name, data, execID, dependencies }) {
-		const wg = new WaitGroup()
+		const goals = []
 
 		// Push data onto redis
-		wg.add(
+		goals.push(
 			this.redis.set(
 				jobDataKey({ name, jobID: execID }),
 				this.serializeData(data),
@@ -305,7 +299,7 @@ export class Queue extends EventEmitter {
 		)
 
 		// Create a record of dependencies for this job
-		wg.add(
+		goals.push(
 			this.redis.sadd(
 				dependenciesKey({ name, jobID: execID }),
 				...dependencies.map(d => `${d.name}:${d.jobID}`),
@@ -314,22 +308,24 @@ export class Queue extends EventEmitter {
 
 		// Append to existing reverse records of jobs
 		for (const dep of dependencies) {
-			wg.add(this.redis.sadd(reverseDependenciesKey(dep), `${name}:${execID}`))
+			goals.push(
+				this.redis.sadd(reverseDependenciesKey(dep), `${name}:${execID}`),
+			)
 		}
 
 		// Wait for all redis commands to resolve
-		await wg.wait()
+		await Promise.all(goals)
 	}
 
 	async markJobAsDone({ name, jobID }) {
-		const wg = new WaitGroup()
+		const goals = []
 
 		for (const dependent of await this.redis.smembers(
 			reverseDependenciesKey({ name, jobID }),
 		)) {
 			const [depName, depID] = dependent.split(':')
 
-			wg.add(
+			goals.push(
 				this.redis
 					.multi()
 					.srem(
@@ -362,7 +358,7 @@ export class Queue extends EventEmitter {
 			)
 		}
 
-		await wg.wait()
+		await Promise.all(goals)
 	}
 
 	async executeJobEntry(entry) {
@@ -468,13 +464,20 @@ export class Queue extends EventEmitter {
 		}
 	}
 
-	async initQueue() {
-		this.redis = await this.createRedisPromise
+	async initQueue({ redis, [kRedisClient]: testRedisClient }) {
+		if (isTestEnv) {
+			this.redis = testRedisClient
+		} else {
+			this.redis = await createRedis(redis)
+		}
+		if (!this.redis) {
+			throw new Error(`Redis client is required to create a queue instance`)
+		}
 
-		const wg = new WaitGroup()
+		const goals = []
 
 		for (const stream of this.xstreams) {
-			wg.add(
+			goals.push(
 				this.redis.xgroup(
 					'create',
 					stream,
@@ -486,7 +489,7 @@ export class Queue extends EventEmitter {
 		}
 
 		try {
-			await wg.wait()
+			await Promise.all(goals)
 		} catch (err) {
 			if (
 				!String(err).includes('BUSYGROUP Consumer Group name already exists')
@@ -497,13 +500,13 @@ export class Queue extends EventEmitter {
 	}
 
 	destroy() {
-		return this.redis.disconnect()
+		return this.redis.close()
 	}
 }
 
 export async function createQueue(options) {
 	const queue = new Queue(options)
-	await queue.initQueue()
+	await queue.initQueue(options)
 
 	return createJobProxy(queue)
 }
