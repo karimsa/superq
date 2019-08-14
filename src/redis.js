@@ -4,14 +4,9 @@
  */
 
 import * as net from 'net'
-import { performance } from 'perf_hooks'
-// import { PerformanceObserver } from 'perf_hooks'
 
-import { v4 as uuid } from 'uuid'
 import RedisParser from 'redis-parser'
-import createDebug from 'debug'
 
-const debug = createDebug('superq')
 const commands = [
 	'ping',
 
@@ -40,43 +35,17 @@ const commands = [
 	'zrem',
 ]
 
-function writeCommand(sock, cmdBuffer, cmd, buffer) {
-	const id = uuid()
-	performance.mark('start-' + id)
-
+function sendCommand(sock, cmdBuffer, cmd, args) {
 	return new Promise((resolve, reject) => {
-		debug(`redis :: %j`, buffer)
+		let buffer = `*${1 + args.length}\r\n$${cmd.length}\r\n${cmd}\r\n`
+		for (const arg of args) {
+			const strArg = String(arg)
+			buffer += `$${strArg.length}\r\n${strArg}\r\n`
+		}
+
 		sock.write(buffer)
 		cmdBuffer.push({ resolve, reject })
-	}).then(reply => {
-		performance.mark('end-' + id)
-		performance.measure(cmd, 'start-' + id, 'end-' + id)
-		return reply
 	})
-}
-
-function sendCommand(sock, cmdBuffer, cmd, args) {
-	// const id = uuid()
-	// performance.mark('start-' + id)
-
-	// return new Promise((resolve, reject) => {
-
-	// 	debug(`redis :: %j`, buffer)
-	// 	sock.write(buffer)
-	// 	cmdBuffer.push({ resolve, reject })
-	// }).then(reply => {
-	// 	performance.mark('end-' + id)
-	// 	performance.measure(cmd, 'start-' + id, 'end-' + id)
-	// 	return reply
-	// })
-
-	let buffer = `*${1 + args.length}\r\n$${cmd.length}\r\n${cmd}\r\n`
-	for (const arg of args) {
-		const strArg = String(arg)
-		buffer += `$${strArg.length}\r\n${strArg}\r\n`
-	}
-
-	return writeCommand(sock, cmdBuffer, cmd, buffer)
 }
 
 export async function createRedis({
@@ -98,7 +67,6 @@ export async function createRedis({
 	})
 
 	const sock = net.createConnection(port, host)
-	sock.unref()
 	sock.on('data', chunk => {
 		parser.execute(chunk)
 	})
@@ -120,6 +88,10 @@ export async function createRedis({
 	}
 
 	const redis = {
+		close() {
+			return new Promise(resolve => sock.end(resolve))
+		},
+
 		sendCommand(cmd, args = []) {
 			return sendCommand(sock, cmdBuffer, cmd, args)
 		},
@@ -188,9 +160,3 @@ export async function createRedis({
 	})
 	return redis
 }
-
-// new PerformanceObserver(items => {
-// 	items.getEntries().forEach(entry => {
-// 		console.log(entry)
-// 	})
-// }).observe({ entryTypes: ['measure'] })
