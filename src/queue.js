@@ -79,7 +79,7 @@ export class Queue extends EventEmitter {
 		/**
 		 * (Optional) Override for the name of the redis consumer group.
 		 */
-		consumerGroup = 'hirefast-workers',
+		consumerGroup = 'superq-workers',
 
 		/**
 		 * (Required) Jobs object containing jobs that should be registered
