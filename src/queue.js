@@ -544,9 +544,13 @@ export class Queue extends EventEmitter {
 	}
 }
 
-export async function createQueue(options) {
+export function createQueue(options) {
 	const queue = new Queue(options)
-	await queue.initQueue(options)
+	queue.initQueue(options).catch(error => {
+		if (!queue.emit('fatal', error)) {
+			process.emit('uncaughtException', error)
+		}
+	})
 
 	return createJobProxy(queue)
 }
