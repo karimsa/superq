@@ -114,6 +114,7 @@ export class Worker {
 			data: jobData.data,
 			maxAttempts: jobData.maxAttempts,
 			name: jobData.name,
+			callerStack: jobData.callerStack,
 			queue,
 			queueName,
 		}
@@ -174,6 +175,7 @@ export class Worker {
 						data: jobData.data,
 						maxAttempts: jobData.maxAttempts,
 						name: jobData.name,
+						callerStack: jobData.callerStack,
 						queueName,
 						queue: this.queuesByName.get(queueName),
 					})

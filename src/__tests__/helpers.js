@@ -38,7 +38,8 @@ export async function getRedisClient() {
 }
 
 export async function initTestQueue({ name = 'test-queue', jobs }) {
-	const { redisDB } = await getRedisClient()
+	const { redis, redisDB } = await getRedisClient()
+	await redis.close()
 	debug(`Selected redis DB: ${redisDB}`)
 	const jobMocks = Array.isArray(jobs)
 		? jobs.reduce((mocks, job) => {

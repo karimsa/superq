@@ -4,6 +4,7 @@
  */
 
 import { EventEmitter } from 'events'
+import * as os from 'os'
 
 import createDebug from 'debug'
 import { now as microtime } from 'microtime'
@@ -16,6 +17,14 @@ import { kRedisClient, kTimers } from './symbols'
 
 const debug = createDebug('superq')
 const isTestEnv = process.env.NODE_ENV === 'test'
+
+function buildStackWithError() {
+	const error = new Error()
+	Error.captureStackTrace(error, this)
+	const stack = error.stack.split('\n').slice(1)
+	stack.unshift(`\nat ${new Date().toISOString()} [${os.hostname()}:${process.pid}]:\n`)
+	return stack.join('\n')
+}
 
 /**
  * JobPriority represents the possible values for the priority of a single
@@ -151,6 +160,10 @@ export class Queue extends EventEmitter {
 	 * Enqueues a job into the queue.
 	 */
 	async Enqueue(name, data, options = {}) {
+		if (!options.callerStack) {
+			options.callerStack = buildStackWithError()
+		}
+
 		// grab the job implementation
 		const job =
 			name === 'markJobAsDone' ? this.markJobAsDone : this.jobs.get(name)
@@ -188,6 +201,7 @@ export class Queue extends EventEmitter {
 					data,
 					priority,
 					maxAttempts,
+					callerStack: options.callerStack,
 				}),
 			)
 
@@ -202,6 +216,7 @@ export class Queue extends EventEmitter {
 				data,
 				execID,
 				dependencies: options.dependencies,
+				callerStack: options.callerStack,
 			})
 			return { name, jobID: execID }
 		}
@@ -236,6 +251,8 @@ export class Queue extends EventEmitter {
 			serializedData,
 			'maxAttempts',
 			String(job.maxAttempts),
+			'callerStack',
+			options.callerStack,
 		)
 		debug(`Enqueued ${job.name}:${jobID} with options = %O`, options)
 		return { name: job.name, jobID }
@@ -250,6 +267,7 @@ export class Queue extends EventEmitter {
 		let name
 		let data
 		let maxAttempts
+		let callerStack
 
 		for (let i = 0; i < res.length; i += 2) {
 			switch (res[i]) {
@@ -263,6 +281,10 @@ export class Queue extends EventEmitter {
 
 				case 'maxAttempts':
 					maxAttempts = parseInt(res[i + 1], 10)
+					break
+
+				case 'callerStack':
+					callerStack = res[i + 1]
 					break
 
 				default:
@@ -279,22 +301,32 @@ export class Queue extends EventEmitter {
 		if (!maxAttempts) {
 			throw new Error(`Job entry for ${jobID} was missing maxAttempts`)
 		}
+		if (!callerStack) {
+			throw new Error(`Job entry for ${jobID} was missing callerStack`)
+		}
 
 		return {
 			data,
 			maxAttempts,
+			callerStack,
 			name,
 		}
 	}
 
-	async setupJobDependencies({ name, data, execID, dependencies }) {
+	async setupJobDependencies({
+		name,
+		data,
+		execID,
+		dependencies,
+		callerStack,
+	}) {
 		const goals = []
 
 		// Push data onto redis
 		goals.push(
 			this.redis.set(
 				jobDataKey({ name, jobID: execID }),
-				this.serializeData(data),
+				this.serializeData({ data, callerStack }),
 			),
 		)
 
@@ -347,12 +379,14 @@ export class Queue extends EventEmitter {
 								throw new Error(`Could not find dependent job: ${depName}`)
 							}
 
-							const data = this.deserializeData(
+							const { data, callerStack } = this.deserializeData(
 								(await this.redis.get(
 									jobDataKey({ name: depName, jobID: depID }),
 								)) || '',
 							)
-							return this.Enqueue(depName, data)
+							return this.Enqueue(depName, data, {
+								callerStack,
+							})
 						}
 					}),
 			)
@@ -376,7 +410,7 @@ export class Queue extends EventEmitter {
 		}
 
 		// execute the job
-		let jobErr
+		let jobError
 		const timeOfJobStart = microtime()
 		try {
 			if (typeof job === 'object') {
@@ -391,7 +425,10 @@ export class Queue extends EventEmitter {
 				await job(entry.data)
 			}
 		} catch (err) {
-			jobErr = err
+			jobError = {
+				message: err.message,
+				stack: err.message + '\n' + buildStackWithError() + '\n' + entry.callerStack,
+			}
 		}
 
 		// mark end of the job by grabbing the time & incrementing the
@@ -399,21 +436,23 @@ export class Queue extends EventEmitter {
 		const duration = microtime() - timeOfJobStart
 		++entry.attempted
 
-		if (jobErr) {
-			this.emit('jobError', {
-				queue: this.queueName,
-				name: entry.name,
-				data: entry.data,
-				jobID: entry.ID,
-				duration,
-				attempt: entry.attempted,
-				error: jobErr,
-			})
-
-			logger.error(
-				`Job ${entry.name}:${entry.ID} failed after ${ms(duration / 1e3)}`,
-				jobErr,
-			)
+		if (jobError) {
+			if (
+				!this.emit('jobError', {
+					queue: this.queueName,
+					name: entry.name,
+					data: entry.data,
+					jobID: entry.ID,
+					duration,
+					attempt: entry.attempted,
+					error: jobError,
+				})
+			) {
+				logger.error(
+					`Job ${entry.name}:${entry.ID} failed after ${ms(duration / 1e3)}`,
+					jobError,
+				)
+			}
 
 			// If we have exceeded the max number of attempts, clear the job
 			if (entry.attempted >= entry.maxAttempts) {
@@ -459,7 +498,9 @@ export class Queue extends EventEmitter {
 		)) {
 			const job = this.deserializeData(jobStr)
 			debug(`Moving ${job.name} from delayed queue into priority queue`)
-			await this.addJobToQueue(job)
+			await this.addJobToQueue(job, {
+				callerStack: job.callerStack,
+			})
 			await this.redis.zrem(this.delayedQueueName, jobStr)
 		}
 	}
@@ -467,9 +508,8 @@ export class Queue extends EventEmitter {
 	async initQueue({ redis, [kRedisClient]: testRedisClient }) {
 		if (isTestEnv) {
 			this.redis = testRedisClient
-		} else {
-			this.redis = await createRedis(redis)
 		}
+		this.redis = this.redis || (await createRedis(redis))
 		if (!this.redis) {
 			throw new Error(`Redis client is required to create a queue instance`)
 		}
