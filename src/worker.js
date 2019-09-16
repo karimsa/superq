@@ -333,8 +333,12 @@ export class WorkerHandle {
 		return this
 	}
 
+	run() {
+		return this[kWorker].process()
+	}
+
 	start() {
-		this.runner = this[kWorker].process()
+		this.runner = this.run()
 	}
 
 	async stop() {
