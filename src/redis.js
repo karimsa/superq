@@ -4,6 +4,7 @@
  */
 
 import * as net from 'net'
+import createDebug from 'debug'
 
 import RedisParser from 'redis-parser'
 
@@ -35,6 +36,8 @@ const commands = [
 	'zrem',
 ]
 
+const debug = createDebug('superq:redis')
+
 function sendCommand(sock, cmdBuffer, cmd, args) {
 	return new Promise((resolve, reject) => {
 		let buffer = `*${1 + args.length}\r\n$${cmd.length}\r\n${cmd}\r\n`
@@ -43,6 +46,7 @@ function sendCommand(sock, cmdBuffer, cmd, args) {
 			buffer += `$${strArg.length}\r\n${strArg}\r\n`
 		}
 
+		debug(`Sending command: %j`, buffer)
 		sock.write(buffer)
 		cmdBuffer.push({ resolve, reject })
 	})
@@ -68,6 +72,9 @@ export async function createRedis({
 
 	const sock = net.createConnection(port, host)
 	sock.on('data', chunk => {
+		if (debug.enabled) {
+			debug(`Received chunk from redis: %j`, chunk.toString('utf8'))
+		}
 		parser.execute(chunk)
 	})
 
