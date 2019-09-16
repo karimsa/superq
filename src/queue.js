@@ -71,6 +71,14 @@ const reverseDependenciesKey = ({ name, jobID }) =>
 	`reverseDependencies(${name}:${jobID})`
 const jobDataKey = ({ name, jobID }) => `jobData(${name}:${jobID})`
 
+function defaultSerializer(data) {
+	return Buffer.from(JSON.stringify(data), 'utf8').toString('hex')
+}
+
+function defaultDeserializer(string) {
+	return JSON.parse(Buffer.from(string, 'hex').toString('utf8'))
+}
+
 export class Queue extends EventEmitter {
 	constructor({
 		/**
@@ -116,13 +124,13 @@ export class Queue extends EventEmitter {
 		 * (Optional) Serialize is the function to be used to serialize
 		 * job parameters from an object into a string.
 		 */
-		serialize = JSON.stringify,
+		serialize = defaultSerializer,
 
 		/**
 		 * (Optional) Deserialize is the function to be used to deserialize
 		 * job parameters from a string into an object.
 		 */
-		deserialize = JSON.parse,
+		deserialize = defaultDeserializer,
 
 		// Dependency injection for tests
 		[kTimers]: timers,
