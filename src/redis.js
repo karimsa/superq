@@ -87,11 +87,11 @@ export async function createRedis({
 		})
 	})
 
-	if (db !== 0) {
-		await sendCommand(sock, cmdBuffer, 'SELECT', [String(db)])
-	}
 	if (password) {
 		await sendCommand(sock, cmdBuffer, 'AUTH', [password])
+	}
+	if (db !== 0) {
+		await sendCommand(sock, cmdBuffer, 'SELECT', [String(db)])
 	}
 
 	const redis = {
