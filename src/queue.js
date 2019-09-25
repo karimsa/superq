@@ -20,7 +20,7 @@ const isTestEnv = process.env.NODE_ENV === 'test'
 
 function buildStackWithError() {
 	const error = new Error()
-	Error.captureStackTrace(error, this)
+	Error.captureStackTrace(error, buildStackWithError)
 	const stack = error.stack.split('\n').slice(1)
 	stack.unshift(`\nat ${new Date().toISOString()} [${os.hostname()}:${process.pid}]:\n`)
 	return stack.join('\n')
@@ -262,7 +262,10 @@ export class Queue extends EventEmitter {
 			'callerStack',
 			options.callerStack,
 		)
-		debug(`Enqueued ${job.name}:${jobID} with options = %O`, options)
+		debug(`Enqueued ${job.name}:${jobID} with => %O`, {
+			data: job.data,
+			options,
+		})
 		return { name: job.name, jobID }
 	}
 
