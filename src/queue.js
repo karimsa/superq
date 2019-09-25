@@ -447,13 +447,13 @@ export class Queue extends EventEmitter {
 		if (jobError) {
 			if (
 				!this.emit('jobError', {
+					...jobError,
 					queue: this.queueName,
 					name: entry.name,
 					data: entry.data,
 					jobID: entry.ID,
 					duration,
 					attempt: entry.attempted,
-					error: jobError,
 				})
 			) {
 				logger.error(
