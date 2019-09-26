@@ -11,7 +11,7 @@
 		"build": "wiz build src/worker.js && wiz build src/module.js"
 	},
 	"devDependencies": {
-		"@karimsa/wiz": "^0.3.2",
+		"@karimsa/wiz": "^0.6.0",
 		"ioredis-mock": "^4.12.1",
 		"lolex": "^4.1.0",
 		"nodemon": "^1.19.1"
