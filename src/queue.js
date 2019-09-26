@@ -11,7 +11,6 @@ import { now as microtime } from 'microtime'
 import ms from 'ms'
 
 import { createRedis } from './redis'
-import { logger } from './logger'
 import { createJobProxy } from './runtime'
 import { kRedisClient, kTimers } from './symbols'
 
@@ -134,6 +133,12 @@ export class Queue extends EventEmitter {
 		 */
 		deserialize = defaultDeserializer,
 
+		/**
+		 * (Default: true) If true, superq will write some basic logs to stdout
+		 * to signal major events such as jobs starting and jobs ending.
+		 */
+		enableEventLogs = true,
+
 		// Dependency injection for tests
 		[kTimers]: timers,
 	} = {}) {
@@ -156,6 +161,7 @@ export class Queue extends EventEmitter {
 		this.xstreams = priorityList.map(priority => {
 			return this.getQueueName(priority)
 		})
+		this.enableEventLogs = enableEventLogs
 	}
 
 	getKey(key) {
@@ -409,7 +415,11 @@ export class Queue extends EventEmitter {
 	}
 
 	async executeJobEntry(entry) {
-		debug(`Job ${entry.name}:${entry.ID} read off ${entry.queueName}`)
+		if (this.enableEventLogs) {
+			console.log(
+				`Job ${entry.name}:${entry.ID} starting from ${entry.queueName}`,
+			)
+		}
 
 		// grab the job implementation
 		const job =
@@ -462,9 +472,14 @@ export class Queue extends EventEmitter {
 					attempt: entry.attempted,
 				})
 			) {
-				logger.error(
+				console.error(
+					`Job ${entry.name}:${entry.ID} failed after ${ms(duration / 1e3)}: ${
+						jobError.stack
+					}`,
+				)
+			} else if (this.enableEventLogs) {
+				console.error(
 					`Job ${entry.name}:${entry.ID} failed after ${ms(duration / 1e3)}`,
-					jobError,
 				)
 			}
 
@@ -486,9 +501,11 @@ export class Queue extends EventEmitter {
 				duration,
 				attempt: entry.attempted,
 			})
-			debug(
-				`Job ${entry.name}:${entry.ID} finished after ${ms(duration / 1e3)}`,
-			)
+			if (this.enableEventLogs) {
+				console.log(
+					`Job ${entry.name}:${entry.ID} finished after ${ms(duration / 1e3)}`,
+				)
+			}
 
 			// Queue up a signal to resolve dependencies - for all jobs
 			// except the `markJobAsDone` job

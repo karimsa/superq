@@ -9,7 +9,6 @@ import createDebug from 'debug'
 import { v4 as uuid } from 'uuid'
 
 import { Queue } from './queue'
-import { logger } from './logger'
 import { kQueue, kTimers, kWorker } from './symbols'
 
 const debug = createDebug('superq')
@@ -244,7 +243,7 @@ export class Worker {
 					const entry = this.parseJobEntry(result)
 					entries.push(entry)
 				} catch (err) {
-					logger.error(`Failed to parse job entry: %O`, err, result)
+					console.error(`Failed to parse job entry: %O`, err, result)
 
 					const queue = this.queuesByName.get(result[0])
 					if (!queue) {
@@ -265,7 +264,7 @@ export class Worker {
 				throw err
 			}
 
-			logger.error(`Failed to retrieve jobs from redis`, err)
+			console.error(`Failed to retrieve jobs from redis`, err)
 			return []
 		}
 	}
