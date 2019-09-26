@@ -22,7 +22,9 @@ function buildStackWithError() {
 	const error = new Error()
 	Error.captureStackTrace(error, buildStackWithError)
 	const stack = error.stack.split('\n').slice(1)
-	stack.unshift(`\nat ${new Date().toISOString()} [${os.hostname()}:${process.pid}]:\n`)
+	stack.unshift(
+		`\nat ${new Date().toISOString()} [${os.hostname()}:${process.pid}]:\n`,
+	)
 	return stack.join('\n')
 }
 
@@ -438,7 +440,8 @@ export class Queue extends EventEmitter {
 		} catch (err) {
 			jobError = {
 				message: err.message,
-				stack: err.message + '\n' + buildStackWithError() + '\n' + entry.callerStack,
+				stack:
+					err.message + '\n' + buildStackWithError() + '\n' + entry.callerStack,
 			}
 		}
 

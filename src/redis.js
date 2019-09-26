@@ -4,8 +4,8 @@
  */
 
 import * as net from 'net'
-import createDebug from 'debug'
 
+import createDebug from 'debug'
 import RedisParser from 'redis-parser'
 
 const commands = [
