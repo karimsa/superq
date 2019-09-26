@@ -9,6 +9,7 @@ describe('Redis', () => {
 	it('should login successfully', async () => {
 		const { redis } = await getRedisClient()
 		expect(await redis.sendCommand('PING', [])).toBe('PONG')
+		await redis.close()
 	})
 
 	it('should get/set values successfully', async () => {
@@ -18,6 +19,7 @@ describe('Redis', () => {
 			'OK',
 		)
 		expect(await redis.get('test')).toBe(JSON.stringify({ name: 'apple' }))
+		await redis.close()
 	})
 
 	it('should allow executing transactions', async () => {
@@ -31,5 +33,6 @@ describe('Redis', () => {
 				.get('two')
 				.exec(),
 		).toEqual([[null, 'apple'], [null, 'bat']])
+		await redis.close()
 	})
 })
