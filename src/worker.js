@@ -320,6 +320,7 @@ export class Worker {
 export class WorkerHandle {
 	constructor(options) {
 		this[kWorker] = new Worker(options)
+		this.concurrency = options.concurrency === undefined ? 1 : options.concurrency
 	}
 
 	on(event, handler) {
@@ -333,7 +334,11 @@ export class WorkerHandle {
 	}
 
 	run() {
-		return this[kWorker].process()
+		return Promise.all(
+			[...new Array(this.concurrency)].map(() => {
+				return this[kWorker].process()
+			}),
+		)
 	}
 
 	start() {
