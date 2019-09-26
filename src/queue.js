@@ -441,7 +441,7 @@ export class Queue extends EventEmitter {
 			jobError = {
 				message: err.message,
 				stack:
-					err.message + '\n' + buildStackWithError() + '\n' + entry.callerStack,
+					err.stack + '\n' + buildStackWithError() + '\n' + entry.callerStack,
 			}
 		}
 
