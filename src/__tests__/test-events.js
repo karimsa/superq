@@ -56,13 +56,11 @@ test('should emit valid events on both queue and worker objects', async () => {
 			jobID: expect.any(String),
 			name: 'two',
 			queue: 'queue-two',
-			error: {
-				message: expect.any(String),
-				stack: expect.any(String),
-			},
+			message: expect.any(String),
+			stack: expect.any(String),
 		},
 	})
-	expect(events[1].data.error.message).toBe('Whoopsies')
+	expect(events[1].data.message).toBe('Whoopsies')
 	expect(events[2]).toEqual({
 		event: 'jobEnd',
 		data: {

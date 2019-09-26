@@ -34,13 +34,11 @@ test('should contain host info in error stack', async () => {
 		},
 		attempt: 1,
 		duration: expect.any(Number),
-		error: {
-			message: 'Things went wrong',
-			stack: expect.any(String),
-		},
+		message: 'Things went wrong',
+		stack: expect.any(String),
 	})
-	expect(jobError.error.stack).toContain(os.hostname() + ':' + process.pid)
+	expect(jobError.stack).toContain(os.hostname() + ':' + process.pid)
 
-	console.error(jobError.error.stack)
+	console.error(jobError.stack)
 	await queue.destroy()
 }, 1e6)
