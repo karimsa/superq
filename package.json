@@ -1,6 +1,6 @@
 {
 	"name": "@karimsa/superq",
-	"version": "0.2.2",
+	"version": "0.3.0",
 	"main": "module.dist.js",
 	"publishConfig": {
 		"access": "public"
