@@ -461,16 +461,18 @@ export class Queue extends EventEmitter {
 		++entry.attempted
 
 		if (jobError) {
+			const jobErrorEvent = {
+				...jobError,
+				queue: this.queueName,
+				name: entry.name,
+				data: entry.data,
+				jobID: entry.ID,
+				duration,
+				attempt: entry.attempted,
+			}
+
 			if (
-				!this.emit('jobError', {
-					...jobError,
-					queue: this.queueName,
-					name: entry.name,
-					data: entry.data,
-					jobID: entry.ID,
-					duration,
-					attempt: entry.attempted,
-				})
+				!this.emit('jobError', jobErrorEvent)
 			) {
 				console.error(
 					`Job ${entry.name}:${entry.ID} failed after ${ms(duration / 1e3)}: ${
@@ -490,6 +492,7 @@ export class Queue extends EventEmitter {
 						`(${entry.maxAttempts})`,
 				)
 
+				this.emit('jobFatalError', jobErrorEvent)
 				await this.ackJob(entry)
 			}
 		} else {
