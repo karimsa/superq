@@ -256,25 +256,34 @@ export class Queue extends EventEmitter {
 	 * Adds a job object to a stream.
 	 */
 	async addJobToQueue(job, options) {
-		// add the job into the queue
-		const serializedData = this.serializeData(job.data)
-		const jobID = await this.redis.xadd(
-			this.getQueueName(job.priority),
-			'*',
-			'name',
-			job.name,
-			'data',
-			serializedData,
-			'maxAttempts',
-			String(job.maxAttempts),
-			'callerStack',
-			options.callerStack,
-		)
-		debug(`Enqueued ${job.name}:${jobID} with => %O`, {
-			data: job.data,
-			options,
-		})
-		return { name: job.name, jobID }
+		try {
+			// add the job into the queue
+			const serializedData = this.serializeData(job.data)
+			const jobID = await this.redis.xadd(
+				this.getQueueName(job.priority),
+				'*',
+				'name',
+				job.name,
+				'data',
+				serializedData,
+				'maxAttempts',
+				String(job.maxAttempts),
+				'callerStack',
+				options.callerStack,
+			)
+			debug(`Enqueued ${job.name}:${jobID} with => %O`, {
+				data: job.data,
+				options,
+			})
+			return { name: job.name, jobID }
+		} catch (error) {
+			if (!String(error).includes('NOGROUP')) {
+				throw error
+			}
+
+			await this.createJobStreams()
+			return this.addJobToQueue(job, options)
+		}
 	}
 
 	async ackJob(entry) {
@@ -471,9 +480,7 @@ export class Queue extends EventEmitter {
 				attempt: entry.attempted,
 			}
 
-			if (
-				!this.emit('jobError', jobErrorEvent)
-			) {
+			if (!this.emit('jobError', jobErrorEvent)) {
 				console.error(
 					`Job ${entry.name}:${entry.ID} failed after ${ms(duration / 1e3)}: ${
 						jobError.stack
@@ -548,6 +555,10 @@ export class Queue extends EventEmitter {
 			throw new Error(`Redis client is required to create a queue instance`)
 		}
 
+		return this.createJobStreams()
+	}
+
+	async createJobStreams() {
 		const goals = []
 
 		for (const stream of this.xstreams) {

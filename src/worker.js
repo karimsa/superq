@@ -270,27 +270,38 @@ export class Worker {
 	}
 
 	async tick() {
-		performance.mark('startWorkerTick')
-		const entries = await this.popJob(1)
-		if (entries.length === 0) {
-			debug(`Read nothing from any job stream`)
+		try {
+			performance.mark('startWorkerTick')
+			const entries = await this.popJob(1)
+			if (entries.length === 0) {
+				debug(`Read nothing from any job stream`)
+				performance.mark('stopWorkerTick')
+				performance.measure('worker tick', 'startWorkerTick', 'stopWorkerTick')
+				return []
+			}
+
+			const goals = []
+			for (const entry of entries) {
+				goals.push(
+					entry.queue.executeJobEntry(entry).catch(() => {
+						// TODO: Log error for monitoring
+					}),
+				)
+			}
+			await Promise.all(goals)
+
 			performance.mark('stopWorkerTick')
 			performance.measure('worker tick', 'startWorkerTick', 'stopWorkerTick')
-			return []
-		}
+		} catch (error) {
+			if (!String(error).includes('NOGROUP')) {
+				throw error
+			}
 
-		const goals = []
-		for (const entry of entries) {
-			goals.push(
-				entry.queue.executeJobEntry(entry).catch(() => {
-					// TODO: Log error for monitoring
-				}),
-			)
+			for (const queue of this.queues) {
+				await queue.createJobStreams()
+			}
+			return this.tick()
 		}
-		await Promise.all(goals)
-
-		performance.mark('stopWorkerTick')
-		performance.measure('worker tick', 'startWorkerTick', 'stopWorkerTick')
 	}
 
 	async process() {
@@ -320,7 +331,8 @@ export class Worker {
 export class WorkerHandle {
 	constructor(options) {
 		this[kWorker] = new Worker(options)
-		this.concurrency = options.concurrency === undefined ? 1 : options.concurrency
+		this.concurrency =
+			options.concurrency === undefined ? 1 : options.concurrency
 	}
 
 	on(event, handler) {
