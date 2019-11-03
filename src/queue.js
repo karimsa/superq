@@ -584,6 +584,24 @@ export class Queue extends EventEmitter {
 		}
 	}
 
+	async size() {
+		const info = await Promise.all(
+			this.xstreams.map(stream => {
+				return this.redis.sendCommand('XINFO', ['STREAM', stream])
+			}),
+		)
+		let totalSize = 0
+
+		for (const queueInfo of info) {
+			const lengthLocation = queueInfo.findIndex(field => {
+				return field === 'length'
+			})
+			totalSize += Number(queueInfo[lengthLocation + 1])
+		}
+
+		return totalSize
+	}
+
 	destroy() {
 		return this.redis.close()
 	}

@@ -14,7 +14,9 @@ test('should be able to queue and execute jobs', async () => {
 		jobs: ['hello'],
 	})
 
+	expect(await queue.$.size()).toEqual(0)
 	await queue.hello.Enqueue({ name: 'world' })
+	expect(await queue.$.size()).toEqual(1)
 	await worker.tick()
 
 	expect(hello.mock.calls).toHaveLength(1)
